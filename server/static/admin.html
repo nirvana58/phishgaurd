@@ -1,0 +1,1005 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>URL Scanner — Admin Panel</title>
+<style>
+  /* ── Reset & base ─────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0d1117;
+    --surface:   #161b22;
+    --surface2:  #21262d;
+    --border:    #30363d;
+    --text:      #e6edf3;
+    --muted:     #7d8590;
+    --accent:    #2f81f7;
+    --accent-dim:#1f4f99;
+    --green:     #1a7f37;
+    --green-bg:  #0d2f1c;
+    --yellow:    #bf8700;
+    --yellow-bg: #2f2200;
+    --red:       #cf222e;
+    --red-bg:    #2f0d0f;
+    --radius:    8px;
+    --font:      -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --mono:      "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 14px;
+    min-height: 100vh;
+  }
+
+  /* ── Layout ───────────────────────────────────────────────────── */
+  .shell { display: flex; min-height: 100vh; }
+
+  nav {
+    width: 220px;
+    min-height: 100vh;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+  }
+
+  .nav-brand {
+    padding: 20px 16px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .nav-brand h1 { font-size: 15px; font-weight: 600; color: var(--text); }
+  .nav-brand span { font-size: 11px; color: var(--muted); }
+
+  .nav-links { padding: 8px 8px; flex: 1; }
+  .nav-link {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px;
+    border-radius: var(--radius);
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all .15s;
+    border: none; background: none; width: 100%; text-align: left;
+  }
+  .nav-link:hover { background: var(--surface2); color: var(--text); }
+  .nav-link.active { background: var(--accent-dim); color: var(--accent); }
+  .nav-link svg { width: 16px; height: 16px; flex-shrink: 0; }
+
+  .nav-footer {
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  main {
+    margin-left: 220px;
+    flex: 1;
+    padding: 28px 32px;
+    max-width: 1200px;
+  }
+
+  /* ── Page header ──────────────────────────────────────────────── */
+  .page-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 24px;
+  }
+  .page-header h2 { font-size: 20px; font-weight: 600; }
+  .page-header .sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
+
+  /* ── Sections ─────────────────────────────────────────────────── */
+  .section { display: none; }
+  .section.active { display: block; }
+
+  /* ── Stat cards ───────────────────────────────────────────────── */
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 14px;
+    margin-bottom: 28px;
+  }
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+  }
+  .stat-card .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  .stat-card .value { font-size: 28px; font-weight: 700; margin-top: 4px; line-height: 1; }
+  .stat-card .sub   { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .stat-card.safe   .value { color: #3fb950; }
+  .stat-card.suspicious .value { color: #d29922; }
+  .stat-card.malicious  .value { color: #f85149; }
+
+  /* ── Cards ────────────────────────────────────────────────────── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 20px;
+    overflow: hidden;
+  }
+  .card-header {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .card-header h3 { font-size: 14px; font-weight: 600; }
+  .card-body { padding: 18px; }
+
+  /* ── Tables ───────────────────────────────────────────────────── */
+  .tbl-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th {
+    text-align: left; padding: 9px 12px;
+    background: var(--surface2);
+    color: var(--muted);
+    font-weight: 500;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .4px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--surface2); }
+
+  /* ── Badges ───────────────────────────────────────────────────── */
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .2px;
+  }
+  .badge-safe       { background: var(--green-bg);  color: #3fb950; }
+  .badge-suspicious { background: var(--yellow-bg); color: #d29922; }
+  .badge-malicious  { background: var(--red-bg);    color: #f85149; }
+  .badge-queued     { background: var(--surface2);  color: var(--muted); }
+  .badge-scanning   { background: #1c2d3f; color: var(--accent); }
+  .badge-completed  { background: var(--green-bg);  color: #3fb950; }
+  .badge-failed     { background: var(--red-bg);    color: #f85149; }
+  .badge-unknown    { background: var(--surface2);  color: var(--muted); }
+
+  /* ── Buttons ──────────────────────────────────────────────────── */
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 14px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all .15s;
+    text-decoration: none;
+  }
+  .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn-primary:hover { background: #1a6feb; }
+  .btn-ghost { background: transparent; color: var(--text); border-color: var(--border); }
+  .btn-ghost:hover { background: var(--surface2); }
+  .btn-danger { background: transparent; color: var(--red); border-color: var(--red); }
+  .btn-danger:hover { background: var(--red-bg); }
+  .btn-sm { padding: 3px 10px; font-size: 11px; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+
+  /* ── Inputs ───────────────────────────────────────────────────── */
+  input[type="text"], select {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    padding: 7px 10px;
+    font-size: 13px;
+    font-family: var(--font);
+    outline: none;
+  }
+  input[type="text"]:focus, select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(47,129,247,.15);
+  }
+
+  /* ── URL cell ─────────────────────────────────────────────────── */
+  .url-cell {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--accent);
+    max-width: 320px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: block;
+  }
+
+  /* ── Model info ───────────────────────────────────────────────── */
+  .model-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+  }
+  .info-row { display: flex; gap: 10px; align-items: baseline; margin-bottom: 10px; }
+  .info-row .key { color: var(--muted); font-size: 12px; width: 160px; flex-shrink: 0; }
+  .info-row .val { font-weight: 500; font-family: var(--mono); font-size: 12px; }
+
+  /* ── Toast ────────────────────────────────────────────────────── */
+  #toast {
+    position: fixed; bottom: 24px; right: 24px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 12px 18px;
+    font-size: 13px; color: var(--text);
+    box-shadow: 0 8px 32px rgba(0,0,0,.4);
+    transform: translateY(80px); opacity: 0;
+    transition: all .25s cubic-bezier(.16,1,.3,1);
+    z-index: 999; max-width: 320px;
+  }
+  #toast.show { transform: translateY(0); opacity: 1; }
+  #toast.ok   { border-left: 3px solid #3fb950; }
+  #toast.err  { border-left: 3px solid #f85149; }
+
+  /* ── Scan detail modal ────────────────────────────────────────── */
+  .modal-backdrop {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,.6); z-index: 100;
+    align-items: center; justify-content: center;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; width: 680px; max-width: 95vw;
+    max-height: 85vh; overflow-y: auto;
+    padding: 24px; position: relative;
+  }
+  .modal-close {
+    position: absolute; top: 16px; right: 16px;
+    background: none; border: none; color: var(--muted);
+    font-size: 20px; cursor: pointer; line-height: 1;
+  }
+  .modal-close:hover { color: var(--text); }
+  .modal h3 { font-size: 16px; margin-bottom: 16px; padding-right: 28px; }
+
+  /* ── Misc ─────────────────────────────────────────────────────── */
+  .empty { text-align: center; padding: 48px; color: var(--muted); font-size: 13px; }
+  .spinner {
+    display: inline-block; width: 14px; height: 14px;
+    border: 2px solid var(--border); border-top-color: var(--accent);
+    border-radius: 50%; animation: spin .6s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .flex { display: flex; }
+  .gap-2 { gap: 8px; }
+  .mt-4 { margin-top: 16px; }
+  .text-muted { color: var(--muted); }
+  .mono { font-family: var(--mono); font-size: 12px; }
+  pre {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 12px;
+    font-family: var(--mono); font-size: 12px;
+    overflow-x: auto; white-space: pre-wrap; color: var(--text);
+  }
+
+  /* ── Donut chart placeholder ──────────────────────────────────── */
+  .chart-wrap {
+    display: flex; align-items: center; gap: 24px;
+  }
+  svg.donut { width: 120px; height: 120px; }
+  .legend { flex: 1; }
+  .legend-row {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 8px; font-size: 13px;
+  }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+</style>
+</head>
+<body>
+<div class="shell">
+
+<!-- ── Sidebar ──────────────────────────────────────────────────── -->
+<nav>
+  <div class="nav-brand">
+    <h1>🔍 URL Scanner</h1>
+    <span>Admin Panel</span>
+  </div>
+  <div class="nav-links">
+    <button class="nav-link active" onclick="showSection('dashboard')">
+      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M1 2.5A1.5 1.5 0 0 1 2.5 1h3A1.5 1.5 0 0 1 7 2.5v3A1.5 1.5 0 0 1 5.5 7h-3A1.5 1.5 0 0 1 1 5.5v-3zm8 0A1.5 1.5 0 0 1 10.5 1h3A1.5 1.5 0 0 1 15 2.5v3A1.5 1.5 0 0 1 13.5 7h-3A1.5 1.5 0 0 1 9 5.5v-3zm-8 8A1.5 1.5 0 0 1 2.5 9h3A1.5 1.5 0 0 1 7 10.5v3A1.5 1.5 0 0 1 5.5 15h-3A1.5 1.5 0 0 1 1 13.5v-3zm8 0A1.5 1.5 0 0 1 10.5 9h3A1.5 1.5 0 0 1 15 10.5v3A1.5 1.5 0 0 1 13.5 15h-3A1.5 1.5 0 0 1 9 13.5v-3z"/></svg>
+      Dashboard
+    </button>
+    <button class="nav-link" onclick="showSection('history')">
+      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 1.5A.5.5 0 0 1 2 1h12a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-.128.334L10 8.692V13.5a.5.5 0 0 1-.342.474l-3 1A.5.5 0 0 1 6 14.5V8.692L1.628 3.834A.5.5 0 0 1 1.5 3.5v-2z"/></svg>
+      Scan History
+    </button>
+    <button class="nav-link" onclick="showSection('model')">
+      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 4.143a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM2.143 8a5.857 5.857 0 1 1 11.714 0A5.857 5.857 0 0 1 2.143 8z"/><path d="M8 6.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"/></svg>
+      Model Manager
+    </button>
+    <button class="nav-link" onclick="showSection('labels')">
+      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M2 2a1 1 0 0 1 1-1h4.586a1 1 0 0 1 .707.293l7 7a1 1 0 0 1 0 1.414l-4.586 4.586a1 1 0 0 1-1.414 0l-7-7A1 1 0 0 1 2 6.586V2zm3.5 4a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/></svg>
+      Label Manager
+    </button>
+    <button class="nav-link" onclick="showSection('submit')">
+      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/><path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/></svg>
+      Quick Scan
+    </button>
+  </div>
+  <div class="nav-footer" id="server-status">
+    <span class="spinner"></span> Connecting…
+  </div>
+</nav>
+
+<!-- ── Main ─────────────────────────────────────────────────────── -->
+<main>
+
+  <!-- Dashboard -->
+  <div class="section active" id="sec-dashboard">
+    <div class="page-header">
+      <div>
+        <h2>Dashboard</h2>
+        <div class="sub">Overview of scan activity and model status</div>
+      </div>
+      <button class="btn btn-ghost" onclick="loadDashboard()">↻ Refresh</button>
+    </div>
+
+    <div class="stat-grid" id="stat-grid">
+      <div class="stat-card"><div class="label">Total Scans</div><div class="value" id="s-total">—</div></div>
+      <div class="stat-card safe"><div class="label">Safe</div><div class="value" id="s-safe">—</div></div>
+      <div class="stat-card suspicious"><div class="label">Suspicious</div><div class="value" id="s-susp">—</div></div>
+      <div class="stat-card malicious"><div class="label">Malicious</div><div class="value" id="s-mal">—</div></div>
+      <div class="stat-card"><div class="label">Active Model</div><div class="value" style="font-size:16px" id="s-model">—</div><div class="sub" id="s-model-sub"></div></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+      <div class="card">
+        <div class="card-header"><h3>Verdict Distribution</h3></div>
+        <div class="card-body">
+          <div class="chart-wrap">
+            <svg class="donut" viewBox="0 0 42 42" id="donut-svg">
+              <circle cx="21" cy="21" r="15.9" fill="transparent" stroke="#21262d" stroke-width="6"/>
+              <text x="21" y="21" text-anchor="middle" dominant-baseline="middle" fill="#e6edf3" font-size="5" id="donut-label">—</text>
+            </svg>
+            <div class="legend" id="donut-legend"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h3>Job Statuses</h3></div>
+        <div class="card-body" id="status-breakdown">
+          <div class="empty">Loading…</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mt-4">
+      <div class="card-header"><h3>Recent Scans</h3></div>
+      <div class="tbl-wrap">
+        <table id="recent-tbl">
+          <thead><tr><th>URL</th><th>Verdict</th><th>Status</th><th>When</th><th></th></tr></thead>
+          <tbody id="recent-body"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scan History -->
+  <div class="section" id="sec-history">
+    <div class="page-header">
+      <div><h2>Scan History</h2><div class="sub">All scans — click a row for full result</div></div>
+      <div class="flex gap-2">
+        <input type="text" id="search-input" placeholder="Filter by URL…" oninput="filterHistory()" style="width:200px">
+        <select id="filter-verdict" onchange="filterHistory()">
+          <option value="">All verdicts</option>
+          <option value="SAFE">Safe</option>
+          <option value="SUSPICIOUS">Suspicious</option>
+          <option value="MALICIOUS">Malicious</option>
+        </select>
+        <button class="btn btn-ghost" onclick="loadHistory()">↻</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="tbl-wrap">
+        <table id="history-tbl">
+          <thead><tr><th>#</th><th>URL</th><th>Verdict</th><th>Confidence</th><th>Status</th><th>Scanned</th><th>Actions</th></tr></thead>
+          <tbody id="history-body"><tr><td colspan="7" class="empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Model Manager -->
+  <div class="section" id="sec-model">
+    <div class="page-header">
+      <div><h2>Model Manager</h2><div class="sub">Manage K-means + SOM training artifacts</div></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+      <div class="card">
+        <div class="card-header"><h3>Active Model</h3></div>
+        <div class="card-body" id="model-info">
+          <div class="empty">Loading…</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h3>Hot-Reload Model</h3></div>
+        <div class="card-body">
+          <p class="text-muted" style="margin-bottom:14px;line-height:1.6">
+            After running <code style="background:var(--surface2);padding:1px 5px;border-radius:4px">python -m training.train</code>
+            to produce new artifacts, click below to swap the live model without restarting the server.
+          </p>
+          <button class="btn btn-primary" id="reload-btn" onclick="reloadModel()">
+            ↻ Reload Model Artifacts
+          </button>
+          <div id="reload-result" style="margin-top:12px"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mt-4">
+      <div class="card-header"><h3>Training Data</h3></div>
+      <div class="card-body">
+        <p class="text-muted" style="line-height:1.6;margin-bottom:12px">
+          Feature vectors from completed scans are automatically saved to SQLite for offline training.
+          Run the training script from the project root whenever you have enough new data:
+        </p>
+        <pre>python -m training.train --min-samples 50</pre>
+        <p class="text-muted" style="margin-top:12px;font-size:12px">
+          Then click "Reload Model Artifacts" above to activate the new model without restarting the server.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Label Manager -->
+  <div class="section" id="sec-labels">
+    <div class="page-header">
+      <div><h2>Label Manager</h2><div class="sub">Mark scans as malicious/benign to build training feedback</div></div>
+      <button class="btn btn-ghost" onclick="loadLabels()">↻ Refresh</button>
+    </div>
+    <div class="card">
+      <div class="tbl-wrap">
+        <table id="label-tbl">
+          <thead><tr><th>URL</th><th>ML Verdict</th><th>Current Label</th><th>Label</th></tr></thead>
+          <tbody id="label-body"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Quick Scan -->
+  <div class="section" id="sec-submit">
+    <div class="page-header">
+      <div><h2>Quick Scan</h2><div class="sub">Submit a URL for immediate scanning</div></div>
+    </div>
+    <div class="card" style="max-width:560px">
+      <div class="card-body">
+        <div style="margin-bottom:14px">
+          <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--muted)">URL to scan</label>
+          <input type="text" id="qs-url" placeholder="https://example.com" style="width:100%">
+        </div>
+        <div style="margin-bottom:18px;display:flex;align-items:center;gap:8px">
+          <input type="checkbox" id="qs-llm" style="width:auto">
+          <label for="qs-llm" style="font-size:13px">Enhance with local LLM (requires Ollama)</label>
+        </div>
+        <button class="btn btn-primary" onclick="submitQuickScan()" id="qs-btn">Submit Scan</button>
+        <div id="qs-result" style="margin-top:16px"></div>
+      </div>
+    </div>
+  </div>
+
+</main>
+</div>
+
+<!-- Scan detail modal -->
+<div class="modal-backdrop" id="modal" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal()">✕</button>
+    <h3 id="modal-title">Scan Detail</h3>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const API = '';  // same origin
+
+// ── Request manager: AbortController + deduplication ───────────────
+// Prevents stale admin panel requests from occupying server threads
+// while the CLI is trying to reach the server.
+// Each named slot (e.g. "stats", "history") can only have ONE in-flight
+// request at a time — starting a new one aborts the previous.
+const _controllers = {};
+
+async function api(path, opts={}, slot=null) {
+  // Abort any previous request in the same slot
+  if (slot) {
+    _controllers[slot]?.abort();
+    _controllers[slot] = new AbortController();
+  }
+  const signal = slot ? _controllers[slot].signal : undefined;
+  try {
+    const r = await fetch(API + path, {
+      headers: {'Content-Type':'application/json'},
+      signal,
+      ...opts,
+    });
+    if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+    return r.json();
+  } catch(e) {
+    if (e.name === 'AbortError') return null; // silently cancelled — not an error
+    throw e;
+  }
+}
+
+function toast(msg, type='ok') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `show ${type}`;
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.className = '', 3000);
+}
+
+function badge(text, cls) {
+  return `<span class="badge badge-${cls}">${text}</span>`;
+}
+
+function verdictBadge(v) {
+  if (!v) return badge('—', 'unknown');
+  const cls = {SAFE:'safe',SUSPICIOUS:'suspicious',MALICIOUS:'malicious'}[v] || 'unknown';
+  return badge(v, cls);
+}
+
+function statusBadge(s) {
+  return badge(s, s || 'unknown');
+}
+
+function timeAgo(iso) {
+  if (!iso) return '—';
+  const d = Date.now() - new Date(iso).getTime();
+  if (d < 60000) return Math.round(d/1000) + 's ago';
+  if (d < 3600000) return Math.round(d/60000) + 'm ago';
+  if (d < 86400000) return Math.round(d/3600000) + 'h ago';
+  return new Date(iso).toLocaleDateString();
+}
+
+function truncate(s, n=55) {
+  return s.length > n ? s.slice(0, n) + '…' : s;
+}
+
+// ── Navigation ─────────────────────────────────────────────────────
+const loaders = {
+  dashboard: loadDashboard,
+  history:   loadHistory,
+  model:     loadModelInfo,
+  labels:    loadLabels,
+  submit:    () => {},
+};
+
+function showSection(id) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+  document.getElementById(`sec-${id}`).classList.add('active');
+  event.currentTarget.classList.add('active');
+  loaders[id]?.();
+}
+
+// ── Server status ping ─────────────────────────────────────────────
+async function pingServer() {
+  const el = document.getElementById('server-status');
+  // Use /health (lightweight async route, never touches DB or thread pool)
+  // instead of /admin/stats to avoid consuming a thread pool slot just for ping
+  try {
+    const r = await fetch(API + '/health', {signal: AbortSignal.timeout(4000)});
+    if (r.ok) {
+      el.innerHTML = '<span style="color:#3fb950">● Online</span>';
+    } else {
+      el.innerHTML = '<span style="color:#f85149">● Offline</span>';
+    }
+  } catch {
+    el.innerHTML = '<span style="color:#f85149">● Offline</span>';
+  }
+}
+
+// ── Dashboard ──────────────────────────────────────────────────────
+async function loadDashboard() {
+  try {
+    const data = await api('/admin/stats', {}, 'stats');
+    if (!data) return;
+    const v = data.verdicts || {};
+    const s = data.statuses || {};
+
+    document.getElementById('s-total').textContent = data.total_scans ?? '—';
+    document.getElementById('s-safe').textContent  = v.SAFE ?? 0;
+    document.getElementById('s-susp').textContent  = v.SUSPICIOUS ?? 0;
+    document.getElementById('s-mal').textContent   = v.MALICIOUS ?? 0;
+    document.getElementById('s-model').textContent = data.active_model_version || 'none';
+    document.getElementById('s-model-sub').textContent = data.active_model_version !== 'none'
+      ? `v${data.active_model_version}` : 'run training.train first';
+
+    // Donut
+    drawDonut(v);
+
+    // Status breakdown
+    const sb = document.getElementById('status-breakdown');
+    if (Object.keys(s).length === 0) {
+      sb.innerHTML = '<div class="empty">No scans yet</div>';
+    } else {
+      sb.innerHTML = Object.entries(s).map(([k,cnt]) =>
+        `<div class="info-row"><span class="key">${k}</span><span class="val">${cnt}</span></div>`
+      ).join('');
+    }
+
+    // Recent
+    const scans = await api('/admin/scans?limit=8', {}, 'recent');
+    if (!scans) return;
+    renderRecentTable(scans.scans || []);
+
+  } catch(e) {
+    toast('Failed to load dashboard: ' + e.message, 'err');
+  }
+}
+
+function drawDonut(verdicts) {
+  const colors = {SAFE:'#3fb950', SUSPICIOUS:'#d29922', MALICIOUS:'#f85149'};
+  const total = Object.values(verdicts).reduce((a,b)=>a+b,0);
+  const svg = document.getElementById('donut-svg');
+  document.getElementById('donut-label').textContent = total;
+
+  // Remove old arcs
+  svg.querySelectorAll('.arc').forEach(el => el.remove());
+
+  if (total === 0) return;
+
+  const cx=21, cy=21, r=15.9, circ=2*Math.PI*r;
+  let offset = -circ/4;
+
+  Object.entries(verdicts).forEach(([k, cnt]) => {
+    const pct = cnt / total;
+    const dash = pct * circ;
+    const circle = document.createElementNS('http://www.w3.org/2000/svg','circle');
+    circle.setAttribute('cx', cx);
+    circle.setAttribute('cy', cy);
+    circle.setAttribute('r', r);
+    circle.setAttribute('fill', 'transparent');
+    circle.setAttribute('stroke', colors[k] || '#7d8590');
+    circle.setAttribute('stroke-width', '6');
+    circle.setAttribute('stroke-dasharray', `${dash} ${circ - dash}`);
+    circle.setAttribute('stroke-dashoffset', -offset);
+    circle.classList.add('arc');
+    svg.insertBefore(circle, svg.querySelector('text'));
+    offset += dash;
+  });
+
+  const legend = document.getElementById('donut-legend');
+  legend.innerHTML = Object.entries(verdicts).map(([k,cnt]) =>
+    `<div class="legend-row">
+      <div class="legend-dot" style="background:${colors[k]||'#7d8590'}"></div>
+      <span>${k}</span><span class="text-muted" style="margin-left:auto">${cnt}</span>
+    </div>`
+  ).join('');
+}
+
+function renderRecentTable(scans) {
+  const body = document.getElementById('recent-body');
+  if (!scans.length) { body.innerHTML = '<tr><td colspan="5" class="empty">No scans yet</td></tr>'; return; }
+  body.innerHTML = scans.map(s =>
+    `<tr>
+      <td><span class="url-cell" title="${s.url}">${truncate(s.url)}</span></td>
+      <td>${verdictBadge(s.verdict)}</td>
+      <td>${statusBadge(s.status)}</td>
+      <td class="text-muted">${timeAgo(s.created_at)}</td>
+      <td><button class="btn btn-ghost btn-sm" onclick="openScanDetail('${s.scan_id}')">View</button></td>
+    </tr>`
+  ).join('');
+}
+
+// ── Scan History ───────────────────────────────────────────────────
+let _allScans = [];
+
+async function loadHistory() {
+  try {
+    const data = await api('/admin/scans?limit=500', {}, 'history');
+    if (!data) return;
+    _allScans = data.scans || [];
+    filterHistory();
+  } catch(e) {
+    toast('Failed to load history: ' + e.message, 'err');
+  }
+}
+
+function filterHistory() {
+  const q = document.getElementById('search-input').value.toLowerCase();
+  const fv = document.getElementById('filter-verdict').value;
+  const filtered = _allScans.filter(s =>
+    (!q || s.url.toLowerCase().includes(q)) &&
+    (!fv || s.verdict === fv)
+  );
+  const body = document.getElementById('history-body');
+  if (!filtered.length) {
+    body.innerHTML = '<tr><td colspan="7" class="empty">No scans match filters</td></tr>';
+    return;
+  }
+  body.innerHTML = filtered.map((s, i) =>
+    `<tr>
+      <td class="text-muted mono">${i+1}</td>
+      <td><span class="url-cell" title="${s.url}">${truncate(s.url, 48)}</span></td>
+      <td>${verdictBadge(s.verdict)}</td>
+      <td class="text-muted">${s.confidence || '—'}</td>
+      <td>${statusBadge(s.status)}</td>
+      <td class="text-muted">${timeAgo(s.created_at)}</td>
+      <td>
+        <div class="flex gap-2">
+          <button class="btn btn-ghost btn-sm" onclick="openScanDetail('${s.scan_id}')">View</button>
+          <button class="btn btn-ghost btn-sm" onclick="openLabelModal('${s.scan_id}', '${s.url}')">Label</button>
+        </div>
+      </td>
+    </tr>`
+  ).join('');
+}
+
+// ── Model Manager ──────────────────────────────────────────────────
+async function loadModelInfo() {
+  try {
+    const data = await api('/admin/stats', {}, 'model-stats');
+    if (!data) return;
+    const el = document.getElementById('model-info');
+    const v = data.active_model_version;
+    if (!v || v === 'none') {
+      el.innerHTML = `<div class="empty">No model loaded.<br>Run <code>python -m training.train</code> first.</div>`;
+    } else {
+      el.innerHTML = `
+        <div class="info-row"><span class="key">Version</span><span class="val">${v}</span></div>
+        <div class="info-row"><span class="key">Total scans in DB</span><span class="val">${data.total_scans}</span></div>
+        <p class="text-muted" style="font-size:12px;margin-top:8px">
+          Full training metadata (samples, inertia, QE) is in
+          <code style="background:var(--surface2);padding:1px 5px;border-radius:3px">training/artifacts/latest.json</code>
+        </p>`;
+    }
+  } catch(e) {
+    toast('Failed to load model info: ' + e.message, 'err');
+  }
+}
+
+async function reloadModel() {
+  const btn = document.getElementById('reload-btn');
+  const res = document.getElementById('reload-result');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Reloading…';
+  res.innerHTML = '';
+  try {
+    const data = await api('/admin/reload-model', {method:'POST', body:'{}'});
+    res.innerHTML = `<div style="color:#3fb950;font-size:13px">
+      ✓ Model reloaded — version <strong>${data.version}</strong>
+      (trained on ${data.n_samples} samples, ${data.trained_at})
+    </div>`;
+    toast('Model reloaded successfully', 'ok');
+    loadModelInfo();
+  } catch(e) {
+    res.innerHTML = `<div style="color:#f85149;font-size:13px">✗ ${e.message}</div>`;
+    toast('Reload failed: ' + e.message, 'err');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '↻ Reload Model Artifacts';
+  }
+}
+
+// ── Label Manager ──────────────────────────────────────────────────
+async function loadLabels() {
+  try {
+    const data = await api('/admin/scans?limit=200', {}, 'labels');
+    if (!data) return;
+    const scans = (data.scans || []).filter(s => s.status === 'completed');
+    const body = document.getElementById('label-body');
+    if (!scans.length) {
+      body.innerHTML = '<tr><td colspan="4" class="empty">No completed scans yet</td></tr>';
+      return;
+    }
+    body.innerHTML = scans.map(s =>
+      `<tr id="label-row-${s.scan_id}">
+        <td><span class="url-cell" title="${s.url}">${truncate(s.url, 45)}</span></td>
+        <td>${verdictBadge(s.verdict)}</td>
+        <td id="lbl-current-${s.scan_id}" class="text-muted">—</td>
+        <td>
+          <div class="flex gap-2">
+            <button class="btn btn-ghost btn-sm" style="color:#3fb950;border-color:#3fb950"
+              onclick="applyLabel('${s.scan_id}','benign')">✓ Benign</button>
+            <button class="btn btn-ghost btn-sm" style="color:#f85149;border-color:#f85149"
+              onclick="applyLabel('${s.scan_id}','malicious')">✗ Malicious</button>
+          </div>
+        </td>
+      </tr>`
+    ).join('');
+  } catch(e) {
+    toast('Failed to load scans for labeling: ' + e.message, 'err');
+  }
+}
+
+async function applyLabel(scanId, label) {
+  try {
+    await api(`/admin/label/${scanId}`, {method:'POST', body: JSON.stringify({label})});
+    const el = document.getElementById(`lbl-current-${scanId}`);
+    if (el) {
+      el.innerHTML = label === 'malicious'
+        ? '<span style="color:#f85149">malicious</span>'
+        : '<span style="color:#3fb950">benign</span>';
+    }
+    toast(`Labeled as ${label}`, 'ok');
+  } catch(e) {
+    toast('Label failed: ' + e.message, 'err');
+  }
+}
+
+function openLabelModal(scanId, url) {
+  showSection('labels');
+  document.querySelectorAll('.nav-link').forEach((l,i) => {
+    if (l.textContent.includes('Label')) { l.classList.add('active'); }
+    else l.classList.remove('active');
+  });
+}
+
+// ── Quick Scan ─────────────────────────────────────────────────────
+async function submitQuickScan() {
+  const url = document.getElementById('qs-url').value.trim();
+  const useLlm = document.getElementById('qs-llm').checked;
+  const btn = document.getElementById('qs-btn');
+  const res = document.getElementById('qs-result');
+
+  if (!url) { toast('Enter a URL first', 'err'); return; }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Submitting…';
+  res.innerHTML = '';
+
+  try {
+    const sub = await api('/scan', {method:'POST', body: JSON.stringify({url, use_llm: useLlm})});
+    const scanId = sub.scan_id;
+
+    res.innerHTML = `<div class="text-muted" style="font-size:12px">
+      Scan ID: <span class="mono">${scanId}</span><br>
+      <span class="spinner" style="margin-top:6px;display:inline-block"></span>
+      Polling for result…
+    </div>`;
+
+    // Poll
+    const pollInterval = setInterval(async () => {
+      try {
+        const status = await api(`/scan/${scanId}`);
+        if (status.status === 'completed') {
+          clearInterval(pollInterval);
+          const v = status.result?.verdict?.verdict || '?';
+          const conf = status.result?.verdict?.confidence || '?';
+          const reasons = (status.result?.verdict?.reasons || []).map(r => `<li>${r}</li>`).join('');
+          const vc = {SAFE:'#3fb950',SUSPICIOUS:'#d29922',MALICIOUS:'#f85149'}[v]||'#e6edf3';
+          res.innerHTML = `
+            <div style="border:1px solid var(--border);border-radius:var(--radius);padding:14px">
+              <div style="font-size:22px;font-weight:700;color:${vc};margin-bottom:6px">${v}</div>
+              <div class="text-muted" style="font-size:12px;margin-bottom:10px">Confidence: ${conf}</div>
+              <ul style="margin-left:16px;font-size:12px;color:var(--muted);line-height:1.7">${reasons}</ul>
+              <div style="margin-top:12px;display:flex;gap:8px">
+                <button class="btn btn-ghost btn-sm" onclick="openScanDetail('${scanId}')">Full Detail</button>
+              </div>
+            </div>`;
+          btn.disabled = false;
+          btn.innerHTML = 'Submit Scan';
+        } else if (status.status === 'failed') {
+          clearInterval(pollInterval);
+          res.innerHTML = `<div style="color:#f85149">Scan failed: ${status.error || 'unknown error'}</div>`;
+          btn.disabled = false;
+          btn.innerHTML = 'Submit Scan';
+        }
+      } catch { clearInterval(pollInterval); }
+    }, 1500);
+
+  } catch(e) {
+    res.innerHTML = `<div style="color:#f85149">${e.message}</div>`;
+    btn.disabled = false;
+    btn.innerHTML = 'Submit Scan';
+    toast('Submission failed: ' + e.message, 'err');
+  }
+}
+
+// ── Scan detail modal ──────────────────────────────────────────────
+async function openScanDetail(scanId) {
+  const modal = document.getElementById('modal');
+  const body = document.getElementById('modal-body');
+  const title = document.getElementById('modal-title');
+  title.textContent = 'Loading…';
+  body.innerHTML = '<div class="empty"><span class="spinner"></span></div>';
+  modal.classList.add('open');
+
+  try {
+    const data = await api(`/scan/${scanId}`);
+    title.textContent = 'Scan Detail';
+    const r = data.result || {};
+    const v = r.verdict || {};
+    const ml = r.ml || {};
+    const vt = r.virustotal || {};
+    const gsb = r.safe_browsing || {};
+    const feats = r.features || {};
+
+    const vColor = {SAFE:'#3fb950',SUSPICIOUS:'#d29922',MALICIOUS:'#f85149'}[v.verdict]||'#e6edf3';
+
+    body.innerHTML = `
+      <div style="margin-bottom:16px">
+        <div style="font-size:24px;font-weight:700;color:${vColor}">${v.verdict||'—'}</div>
+        <div class="text-muted" style="font-size:12px">Confidence: ${v.confidence||'—'}</div>
+        <div class="mono" style="margin-top:6px;word-break:break-all">${data.url}</div>
+        <div class="text-muted" style="font-size:11px;margin-top:4px">${data.created_at||''}</div>
+      </div>
+
+      <div style="margin-bottom:14px">
+        <strong style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Signals</strong>
+        <ul style="margin:6px 0 0 16px;font-size:13px;line-height:1.8">
+          ${(v.reasons||[]).map(r=>`<li>${r}</li>`).join('')}
+        </ul>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+        <div>
+          <strong style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">ML Scores</strong>
+          ${ml.available ? `
+            <div class="info-row" style="margin-top:8px"><span class="key">K-means</span><span class="val">${ml.kmeans?.anomaly_score?.toFixed(4)||'—'}</span></div>
+            <div class="info-row"><span class="key">SOM</span><span class="val">${ml.som?.anomaly_score?.toFixed(4)||'—'}</span></div>
+            <div class="info-row"><span class="key">Combined</span><span class="val">${ml.combined_score?.toFixed(4)||'—'}</span></div>
+            <div class="info-row"><span class="key">Agreement</span><span class="val">${ml.models_agree?'Yes':'No (mixed)'}</span></div>
+          ` : '<div class="text-muted" style="font-size:12px;margin-top:8px">ML unavailable</div>'}
+        </div>
+        <div>
+          <strong style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Threat Intel</strong>
+          <div class="info-row" style="margin-top:8px"><span class="key">VirusTotal</span><span class="val" style="color:${vt.malicious>0?'#f85149':'#3fb950'}">${vt.available?(vt.malicious+' malicious'):'unavailable'}</span></div>
+          <div class="info-row"><span class="key">Safe Browsing</span><span class="val" style="color:${gsb.is_threat?'#f85149':'#3fb950'}">${gsb.available?(gsb.is_threat?'THREAT':'clean'):'unavailable'}</span></div>
+        </div>
+      </div>
+
+      <details>
+        <summary style="cursor:pointer;font-size:12px;color:var(--muted);margin-bottom:8px">URL Features</summary>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;font-size:12px;margin-top:8px">
+          ${Object.entries(feats).map(([k,v])=>`
+            <div class="info-row" style="margin-bottom:4px">
+              <span class="key" style="width:140px">${k}</span>
+              <span class="val">${typeof v==='number'?v.toFixed(4):v}</span>
+            </div>`).join('')}
+        </div>
+      </details>
+
+      <div style="margin-top:16px;display:flex;gap:8px">
+        <button class="btn btn-ghost btn-sm" onclick="openLabelApply('${scanId}','malicious')"
+          style="color:#f85149;border-color:#f85149">✗ Label Malicious</button>
+        <button class="btn btn-ghost btn-sm" onclick="openLabelApply('${scanId}','benign')"
+          style="color:#3fb950;border-color:#3fb950">✓ Label Benign</button>
+      </div>`;
+
+  } catch(e) {
+    body.innerHTML = `<div style="color:#f85149">${e.message}</div>`;
+  }
+}
+
+async function openLabelApply(scanId, label) {
+  await applyLabel(scanId, label);
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.remove('open');
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+// ── Boot ───────────────────────────────────────────────────────────
+pingServer();
+loadDashboard();
+setInterval(pingServer, 10000);
+</script>
+</body>
+</html>
