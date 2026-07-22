@@ -14,12 +14,16 @@ python-dotenv==1.2.2      # .env file loading for API keys
 scikit-learn==1.8.0       # K-means + StandardScaler
 MiniSom==2.3.6            # Self-Organizing Map
 
+# ── CLI / TUI ─────────────────────────────────────────────────────────────────
+questionary==2.0.1        # Interactive command-line prompts
+textual==0.83.0           # Terminal User Interface (TUI) framework
+
 # ── Report generation ─────────────────────────────────────────────────────────
 rich==15.0.0              # Terminal output (panels, tables, colors, progress)
 python-docx==1.2.0        # .docx report generation
 reportlab==4.4.10         # .pdf report generation
 
-# ── LLM (optional) ───────────────────────────────────────────────────────────
+# ── LLM (optional) ────────────────────────────────────────────────────────────
 # Only needed if you use --llm flag. Requires Ollama running locally.
 # https://ollama.com — pull a model with: ollama pull llama3
 ollama==0.6.2
