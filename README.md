@@ -550,3 +550,6 @@ Install everything:
 ```bash
 pip install -r requirements.txt
 ```
+
+---
+Built by Lakshmeesha Suvarna
