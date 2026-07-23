@@ -552,4 +552,9 @@ pip install -r requirements.txt
 ```
 
 ---
+## Contact
+
+For Any queries or Request of data set for training : [Contact here](https://contact-alpha-seven.vercel.app/)
+
+---
 Built by Lakshmeesha Suvarna
