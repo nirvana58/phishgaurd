@@ -17,12 +17,12 @@ Routes:
   GET  /admin/scans             List all scans
 """
 
+import asyncio
 import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
-import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
@@ -73,7 +73,12 @@ class LabelRequest(BaseModel):
 # ── Single scan ────────────────────────────────────────────────────────────────
 
 @router.post("/scan", tags=["scan"])
-async def submit_scan(body: ScanRequest, session: Session = Depends(get_session)):
+def submit_scan(body: ScanRequest, session: Session = Depends(get_session)):
+    """
+    Sync handler — runs in thread pool. Never blocks the event loop.
+    enqueue() uses call_soon_threadsafe so the asyncio.Queue is
+    updated safely from this thread.
+    """
     url = body.url.strip()
     if not url:
         raise HTTPException(400, "url must not be empty")
@@ -98,12 +103,8 @@ def get_scan_status(scan_id: str, session: Session = Depends(get_session)):
 
 
 @router.post("/scan/{scan_id}/cancel", tags=["scan"])
-async def cancel_scan(scan_id: str, session: Session = Depends(get_session)):
-    """
-    Request cancellation of a queued or running scan.
-    The worker honours this at its next checkpoint (near-instant for queued
-    jobs, within one async yield for running ones).
-    """
+def cancel_scan(scan_id: str, session: Session = Depends(get_session)):
+    """Sync handler — thread pool. request_cancel() is GIL-safe (plain set)."""
     job = get_scan_job(session, scan_id)
     if not job:
         raise HTTPException(404, f"No scan found: {scan_id}")
@@ -117,7 +118,7 @@ async def cancel_scan(scan_id: str, session: Session = Depends(get_session)):
 
 
 @router.get("/scan/{scan_id}/report", tags=["scan"])
-async def download_report(scan_id: str, fmt: str = "md"):
+def download_report(scan_id: str, fmt: str = "md"):
     allowed = {"md", "pdf", "docx", "txt"}
     if fmt not in allowed:
         raise HTTPException(400, f"fmt must be one of {allowed}")
@@ -130,17 +131,14 @@ async def download_report(scan_id: str, fmt: str = "md"):
 # ── Batch scan ─────────────────────────────────────────────────────────────────
 
 @router.post("/batch", tags=["batch"])
-async def submit_batch(body: BatchRequest, session: Session = Depends(get_session)):
+def submit_batch(body: BatchRequest, session: Session = Depends(get_session)):
     """
-    Submit multiple URLs as one batch — no hard URL cap.
-    Returns a single batch_id immediately. All URLs are scanned
-    individually but tracked under one ID. A single consolidated
-    report is generated when every URL finishes.
+    Sync handler — runs in thread pool. Never blocks event loop.
 
-    Large batches are inserted in chunks of 100 rows per commit so
-    SQLite never holds a long exclusive lock during submission.
-
-    Override the default unlimited cap by setting BATCH_MAX_URLS env var.
+    bulk_create_scan_jobs() inserts in 100-row chunks, each chunk
+    commits independently so SQLite write-locks stay short even for
+    thousands of URLs. enqueue() uses call_soon_threadsafe so the
+    asyncio.Queue is updated safely from this thread.
     """
     # Deduplicate preserving order
     seen, urls = set(), []
@@ -161,22 +159,19 @@ async def submit_batch(body: BatchRequest, session: Session = Depends(get_sessio
         )
 
     batch_id = str(uuid.uuid4())
-
-    # Create batch header row
     create_batch_job(session, batch_id=batch_id,
                      total_urls=len(urls), use_llm=body.use_llm)
 
-    # Build job records and bulk-insert in 100-row chunks (keeps write-locks short)
     job_records = [
         {"job_id": str(uuid.uuid4()), "url": url,
          "use_llm": body.use_llm, "batch_id": batch_id}
         for url in urls
     ]
-    await asyncio.to_thread(
-        bulk_create_scan_jobs, session, job_records, 100
-    )
 
-    # Enqueue all jobs for the worker (non-blocking — just fills asyncio.Queue)
+    # Chunked bulk insert — no await needed (already in a thread)
+    bulk_create_scan_jobs(session, job_records, chunk_size=100)
+
+    # Thread-safe enqueue via call_soon_threadsafe
     for j in job_records:
         scan_queue.enqueue(j["job_id"], j["url"], j["use_llm"], batch_id=batch_id)
 
@@ -253,7 +248,7 @@ def get_batch_status(
 
 
 @router.post("/batch/{batch_id}/cancel", tags=["batch"])
-async def cancel_batch(batch_id: str, session: Session = Depends(get_session)):
+def cancel_batch(batch_id: str, session: Session = Depends(get_session)):
     """Cancel all queued/running scans in a batch."""
     batch = get_batch_job(session, batch_id)
     if not batch:
@@ -275,7 +270,7 @@ async def cancel_batch(batch_id: str, session: Session = Depends(get_session)):
 
 
 @router.get("/batch/{batch_id}/report", tags=["batch"])
-async def download_batch_report(batch_id: str, fmt: str = "md"):
+def download_batch_report(batch_id: str, fmt: str = "md"):
     allowed = {"md", "pdf", "docx", "txt"}
     if fmt not in allowed:
         raise HTTPException(400, f"fmt must be one of {allowed}")
@@ -288,7 +283,13 @@ async def download_batch_report(batch_id: str, fmt: str = "md"):
 # ── Admin ──────────────────────────────────────────────────────────────────────
 
 @router.post("/admin/reload-model", tags=["admin"])
-async def reload_model(request: Request):
+def reload_model(request: Request):
+    """
+    Sync handler — ModelStore.load() reads files from disk (sync I/O).
+    Running in thread pool keeps the event loop free during file reads.
+    Writing to request.app.state is safe — Python GIL protects the
+    attribute assignment, and the worker reads it only between jobs.
+    """
     try:
         new_store = ModelStore.load()
         request.app.state.model_store = new_store
@@ -300,8 +301,8 @@ async def reload_model(request: Request):
 
 
 @router.post("/admin/label/{scan_id}", tags=["admin"])
-async def label_scan(scan_id: str, body: LabelRequest,
-                     session: Session = Depends(get_session)):
+def label_scan(scan_id: str, body: LabelRequest,
+               session: Session = Depends(get_session)):
     if body.label not in {"malicious", "benign"}:
         raise HTTPException(400, "label must be 'malicious' or 'benign'")
     job = get_scan_job(session, scan_id)
