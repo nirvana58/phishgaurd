@@ -37,22 +37,36 @@ if TYPE_CHECKING:
 class ScanQueue:
     def __init__(self):
         self._q: asyncio.Queue          = asyncio.Queue()
-        self._cancel_set: set[str]      = set()   # scan_ids requested for cancel
+        self._cancel_set: set[str]      = set()
         self._worker_task: Optional[asyncio.Task] = None
+        # Stored in start_worker so enqueue() can use call_soon_threadsafe
+        # when called from thread-pool route handlers (sync def routes).
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
     def enqueue(self, job_id: str, url: str, use_llm: bool,
                 batch_id: Optional[str] = None):
-        """Non-blocking push. Safe to call from sync route handlers."""
-        self._q.put_nowait((job_id, url, use_llm, batch_id))
+        """
+        Thread-safe enqueue. Safe to call from BOTH:
+          - async def routes (on event loop)
+          - sync def routes  (running in FastAPI thread pool)
+
+        asyncio.Queue is NOT thread-safe for cross-thread access.
+        call_soon_threadsafe() schedules put_nowait() to run on the
+        event loop thread, which is the only safe way to add to an
+        asyncio.Queue from a different thread.
+        """
+        item = (job_id, url, use_llm, batch_id)
+        if self._loop and self._loop.is_running():
+            # Called from a thread pool thread — schedule on event loop
+            self._loop.call_soon_threadsafe(self._q.put_nowait, item)
+        else:
+            # Called directly from event loop (e.g. during startup)
+            self._q.put_nowait(item)
 
     def request_cancel(self, scan_id: str):
-        """
-        Mark a scan_id for cancellation.
-        If it hasn't started yet it will be skipped when dequeued.
-        If it's mid-flight the scanner's next checkpoint will honour it.
-        """
+        """Thread-safe — just adds to a plain Python set (GIL-protected)."""
         self._cancel_set.add(scan_id)
 
     def is_cancelled(self, scan_id: str) -> bool:
@@ -60,9 +74,10 @@ class ScanQueue:
 
     def start_worker(self, app: "FastAPI"):
         """
-        Schedule the worker coroutine. Store the Task so lifespan
-        teardown can cancel it cleanly.
+        Schedule the worker coroutine. Capture the running event loop
+        so enqueue() can use call_soon_threadsafe from thread pool threads.
         """
+        self._loop = asyncio.get_event_loop()
         self._worker_task = asyncio.create_task(
             self._worker(app), name="scan-worker"
         )
