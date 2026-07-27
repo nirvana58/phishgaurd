@@ -1,4 +1,4 @@
-# 🔍 PhishGuard — URL Threat Scanner
+#  PhishGuard — URL Threat Scanner
 
 A CLI-based URL threat detection system powered by machine learning anomaly detection, real-time threat intelligence APIs, WHOIS domain intelligence, and multi-format report generation — all controllable from a single interactive terminal menu.
 
@@ -550,6 +550,27 @@ Install everything:
 ```bash
 pip install -r requirements.txt
 ```
+
+## Webhooks & Integrations
+PhishGuard includes a webhook notification system to automatically dispatch alerts when threats are detected.
+
+⚠️ CRITICAL: Platform-Specific Configuration
+
+Out of the box, PhishGuard sends a standard JSON payload representing the scan event. However, if you are routing these alerts to a third-party service such as Discord, Slack, or PagerDuty, you must rewrite your webhook script to ensure the POST request matches their required JSON guidelines. If you do not adapt the payload format, the receiving platform will reject the request (typically returning a 400 Bad Request error).
+
+To configure your platform:
+
+Open core/webhook.py.
+
+Locate the _build_payload(scan_id: str, result: dict) function.
+
+Modify the return dictionary to construct a JSON object that matches your target app:
+
+Discord: Format the payload to include an embeds array or a standard content string.
+
+Slack: Construct the payload using Slack's blocks framework (Block Kit) or a standard text field.
+
+PagerDuty: Structure the payload to align with the PagerDuty Events API schema, ensuring necessary routing keys and event actions are declared.
 
 ---
 ## Contact
