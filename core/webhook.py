@@ -1,5 +1,5 @@
 """
-core/discord_webhook.py
+core/webhook.py
 
 Discord notification system.
 
