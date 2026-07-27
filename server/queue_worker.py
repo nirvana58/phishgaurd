@@ -29,6 +29,7 @@ from server.db import (
     complete_batch_job,
 )
 from server.scanner import scan_url
+from core.webhook import send_discord_webhook
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -197,8 +198,13 @@ class ScanQueue:
         verdict = result.get("verdict", {}).get("verdict", "?")
         print(f"[worker] Job {job_id} completed — {verdict}")
 
-        # Yield briefly so pending HTTP requests get a turn before we
-        # immediately pick up the next queued job
+        # ── Webhook notification (fire-and-forget) ────────────────────────────
+        try:
+            await send_discord_webhook(job_id, result)
+        except Exception as _wh_err:
+            print(f"[worker] Webhook error (non-fatal): {_wh_err}")
+
+        # Yield so pending HTTP requests get a turn before next job
         await asyncio.sleep(0)
 
         # ── Trigger batch report when all URLs are done ───────────────────────
