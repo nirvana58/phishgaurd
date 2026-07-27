@@ -29,6 +29,15 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
+
+# Load .env BEFORE any local (server.*/core.*) imports. Several modules
+# (e.g. core.discord_webhook, core.webhook) read env vars at *module import
+# time* — if load_dotenv() runs after those modules are first imported,
+# they lock in empty defaults ("") for the rest of the process, even
+# though the .env file is loaded correctly afterward.
+ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
+load_dotenv(ENV_PATH)
+
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -40,9 +49,7 @@ from server.api import router
 from server.queue_worker import scan_queue
 from core.models import ModelStore, ModelLoadError
 
-ENV_PATH   = Path(__file__).resolve().parent.parent / ".env"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
-load_dotenv(ENV_PATH)
 
 # ── Thread pool ────────────────────────────────────────────────────────────────
 # 40 threads: admin panel can use up to 10 simultaneously (polling + page loads)
