@@ -195,6 +195,15 @@ class ReportData:
     whois_is_ip_host: bool = False
     whois_error: Optional[str] = None
 
+    # Redirect chain section
+    chain_original_url: str = ""
+    chain_final_url: str = ""
+    chain_hop_count: int = 0
+    chain_hops: list = field(default_factory=list)
+    chain_is_shortened: bool = False
+    chain_shorteners_found: list = field(default_factory=list)
+    chain_error: Optional[str] = None
+
     # LLM narrative (populated later if use_llm=True)
     llm_summary: Optional[str] = None
     llm_model: Optional[str] = None
@@ -206,6 +215,7 @@ def _build_report_data(scan_id: str, result: dict) -> ReportData:
     vt  = result.get("virustotal", {})
     gsb = result.get("safe_browsing", {})
     w   = result.get("whois", {})
+    ch  = result.get("redirect_chain", {})
 
     return ReportData(
         scan_id=scan_id,
@@ -245,6 +255,14 @@ def _build_report_data(scan_id: str, result: dict) -> ReportData:
         whois_expiring_soon=w.get("expiring_soon", False),
         whois_is_ip_host=w.get("is_ip_host", False),
         whois_error=w.get("reason") if not w.get("available") else None,
+        # Redirect chain
+        chain_original_url=ch.get("original_url", result.get("url", "")),
+        chain_final_url=ch.get("final_url", result.get("url", "")),
+        chain_hop_count=ch.get("hop_count", 0),
+        chain_hops=ch.get("hops", []),
+        chain_is_shortened=ch.get("is_shortened", False),
+        chain_shorteners_found=ch.get("shorteners_found", []),
+        chain_error=ch.get("error"),
     )
 
 
@@ -266,6 +284,11 @@ def _build_llm_prompt(rd: ReportData) -> str:
         f"VirusTotal: {rd.vt_malicious} malicious, {rd.vt_suspicious} suspicious detections\n"
         f"Google Safe Browsing: "
         f"{'THREAT — ' + ', '.join(rd.gsb_threat_types) if rd.gsb_is_threat else 'no threat'}\n"
+        f"Redirect chain: {rd.chain_hop_count} hop(s)"
+        + (f", shortener(s) used: {', '.join(rd.chain_shorteners_found)}" if rd.chain_is_shortened else "")
+        + (f", final destination differs from submitted URL: {rd.chain_final_url}"
+           if rd.chain_final_url and rd.chain_final_url != rd.chain_original_url else "")
+        + "\n"
         f"Notable URL features: "
         f"entropy={rd.features.get('shannon_entropy', 0):.2f}, "
         f"typosquat_distance={rd.features.get('typosquat_distance', 0)}, "
@@ -388,6 +411,35 @@ def render_terminal(rd: ReportData):
         ext_table.add_row("Safe Browsing", "[dim]unavailable[/dim]", "API key not set or timeout")
 
     console.print(ext_table)
+
+    # Redirect Chain
+    console.print("\n[bold]Redirect Chain[/bold]")
+    if rd.chain_error and not rd.chain_hops:
+        console.print(f"  [dim]unavailable — {rd.chain_error}[/dim]")
+    elif rd.chain_hop_count == 0:
+        console.print("  [dim]No redirects — URL served content directly[/dim]")
+    else:
+        chain_tbl = Table(box=box.SIMPLE, show_header=True, header_style="bold dim")
+        chain_tbl.add_column("#", width=3, justify="right")
+        chain_tbl.add_column("URL", max_width=55, no_wrap=True)
+        chain_tbl.add_column("Status", width=8, justify="right")
+        chain_tbl.add_column("Shortener", width=10, justify="center")
+        for i, hop in enumerate(rd.chain_hops, 1):
+            chain_tbl.add_row(
+                str(i),
+                hop.get("url", "")[:55],
+                str(hop.get("status_code", "—")),
+                "[yellow]⚑ yes[/yellow]" if hop.get("is_shortener") else "",
+            )
+        console.print(chain_tbl)
+        console.print(f"  [dim]Final destination:[/dim] {rd.chain_final_url}")
+        if rd.chain_is_shortened:
+            console.print(
+                f"  [yellow]⚑ URL shortener(s) used: "
+                f"{', '.join(rd.chain_shorteners_found)}[/yellow]"
+            )
+        if rd.chain_error:
+            console.print(f"  [dim]Note: {rd.chain_error}[/dim]")
 
     # WHOIS Domain Intelligence
     console.print("\n[bold]WHOIS Domain Intelligence[/bold]")
@@ -534,6 +586,28 @@ def _write_md(rd: ReportData, path: Path):
     else:
         lines.append("_Unavailable (API key not configured or request timed out)._")
 
+    # Redirect chain section
+    lines += [f"", f"## Redirect Chain", f""]
+    if rd.chain_error and not rd.chain_hops:
+        lines.append(f"_Unavailable — {rd.chain_error}_")
+    elif rd.chain_hop_count == 0:
+        lines.append("No redirects — URL served content directly.")
+    else:
+        lines += [
+            f"| # | URL | Status | Shortener |",
+            f"|---|-----|--------|-----------|",
+        ]
+        for i, hop in enumerate(rd.chain_hops, 1):
+            lines.append(
+                f"| {i} | `{hop.get('url', '')}` | {hop.get('status_code', '—')} | "
+                f"{'⚠️ yes' if hop.get('is_shortener') else ''} |"
+            )
+        lines += [f"", f"**Final destination:** `{rd.chain_final_url}`"]
+        if rd.chain_is_shortened:
+            lines.append(f"**⚠️ URL shortener(s) used:** {', '.join(rd.chain_shorteners_found)}")
+        if rd.chain_error:
+            lines.append(f"_Note: {rd.chain_error}_")
+
     # WHOIS section
     lines += [f"", f"## WHOIS Domain Intelligence", f""]
     if rd.whois_available:
@@ -634,6 +708,24 @@ def _write_txt(rd: ReportData, path: Path):
         lines.append(f"  Safe Browsing — {threat_str}")
     else:
         lines.append("  Safe Browsing — unavailable")
+
+    lines += [sep, "REDIRECT CHAIN", sep]
+    if rd.chain_error and not rd.chain_hops:
+        lines.append(f"  Unavailable — {rd.chain_error}")
+    elif rd.chain_hop_count == 0:
+        lines.append("  No redirects — URL served content directly.")
+    else:
+        for i, hop in enumerate(rd.chain_hops, 1):
+            marker = " [SHORTENER]" if hop.get("is_shortener") else ""
+            lines.append(
+                f"  {i}. {hop.get('url', '')}  "
+                f"[{hop.get('status_code', '—')}]{marker}"
+            )
+        lines.append(f"  Final destination : {rd.chain_final_url}")
+        if rd.chain_is_shortened:
+            lines.append(f"  [!] URL shortener(s) used: {', '.join(rd.chain_shorteners_found)}")
+        if rd.chain_error:
+            lines.append(f"  Note: {rd.chain_error}")
 
     lines += [sep, "WHOIS DOMAIN INTELLIGENCE", sep]
     if rd.whois_available:
@@ -757,11 +849,49 @@ def _write_pdf(rd: ReportData, path: Path):
     story.append(t2)
     story.append(Spacer(1, 4*mm))
 
-    # WHOIS section
-    story.append(Paragraph("WHOIS Domain Intelligence", h1_style))
     RISK_COLOR = colors.HexColor("#cf222e")
     WARN_COLOR = colors.HexColor("#bf8700")
     OK_COLOR   = colors.HexColor("#1a7f37")
+
+    # Redirect Chain
+    story.append(Paragraph("Redirect Chain", h1_style))
+    if rd.chain_error and not rd.chain_hops:
+        story.append(Paragraph(f"Unavailable — {rd.chain_error}", normal))
+    elif rd.chain_hop_count == 0:
+        story.append(Paragraph("No redirects — URL served content directly.", normal))
+    else:
+        chain_data = [["#", "URL", "Status", "Shortener"]]
+        for i, hop in enumerate(rd.chain_hops, 1):
+            chain_data.append([
+                str(i),
+                Paragraph(f'<font size="7" name="Courier">{hop.get("url", "")[:70]}</font>', normal),
+                str(hop.get("status_code", "—")),
+                "⚠ yes" if hop.get("is_shortener") else "",
+            ])
+        tc = RLTable(chain_data, colWidths=[8*mm, 112*mm, 18*mm, 22*mm])
+        tc.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f0f0f0")),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ("GRID", (0, 0), (-1, -1), 0.25, colors.lightgrey),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#fafafa")]),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ]))
+        story.append(tc)
+        story.append(Spacer(1, 2*mm))
+        story.append(Paragraph(
+            f"<b>Final destination:</b> <font name='Courier' size='8'>{rd.chain_final_url}</font>",
+            normal,
+        ))
+        if rd.chain_is_shortened:
+            story.append(Paragraph(
+                f"⚠ URL shortener(s) used: {', '.join(rd.chain_shorteners_found)}",
+                ParagraphStyle("chain_warn", parent=normal, fontSize=8, textColor=WARN_COLOR),
+            ))
+    story.append(Spacer(1, 4*mm))
+
+    # WHOIS section
+    story.append(Paragraph("WHOIS Domain Intelligence", h1_style))
 
     if rd.whois_available:
         if rd.whois_is_ip_host:
@@ -932,6 +1062,41 @@ def _write_docx(rd: ReportData, path: Path):
     else:
         ext_tbl.rows[2].cells[0].text = "Google Safe Browsing"
         ext_tbl.rows[2].cells[1].text = "unavailable"
+
+    # Redirect Chain
+    doc.add_heading("Redirect Chain", level=1)
+    if rd.chain_error and not rd.chain_hops:
+        doc.add_paragraph(f"Unavailable — {rd.chain_error}")
+    elif rd.chain_hop_count == 0:
+        doc.add_paragraph("No redirects — URL served content directly.")
+    else:
+        chain_tbl = doc.add_table(rows=len(rd.chain_hops) + 1, cols=4)
+        chain_tbl.style = "Table Grid"
+        for ci, h in enumerate(["#", "URL", "Status", "Shortener"]):
+            chain_tbl.rows[0].cells[ci].text = h
+            chain_tbl.rows[0].cells[ci].paragraphs[0].runs[0].bold = True
+        WARN = RGBColor(0xbf, 0x87, 0x00)
+        for ri, hop in enumerate(rd.chain_hops, 1):
+            chain_tbl.rows[ri].cells[0].text = str(ri)
+            chain_tbl.rows[ri].cells[1].text = hop.get("url", "")
+            chain_tbl.rows[ri].cells[2].text = str(hop.get("status_code", "—"))
+            is_shortener = hop.get("is_shortener", False)
+            chain_tbl.rows[ri].cells[3].text = "⚠ yes" if is_shortener else ""
+            if is_shortener and chain_tbl.rows[ri].cells[3].paragraphs[0].runs:
+                chain_tbl.rows[ri].cells[3].paragraphs[0].runs[0].font.color.rgb = WARN
+                chain_tbl.rows[ri].cells[3].paragraphs[0].runs[0].bold = True
+
+        fp = doc.add_paragraph()
+        fp.add_run("Final destination: ").bold = True
+        final_run = fp.add_run(rd.chain_final_url)
+        final_run.font.name = "Courier New"
+        final_run.font.size = Pt(9)
+
+        if rd.chain_is_shortened:
+            sp = doc.add_paragraph()
+            sr = sp.add_run(f"⚠ URL shortener(s) used: {', '.join(rd.chain_shorteners_found)}")
+            sr.font.color.rgb = WARN
+            sr.bold = True
 
     # WHOIS section
     doc.add_heading("WHOIS Domain Intelligence", level=1)
@@ -1115,6 +1280,7 @@ async def generate_batch_report(
         confidence = v_block.get("confidence", "—")
         reasons    = v_block.get("reasons", [])
         url        = r.get("url", "")
+        chain      = r.get("redirect_chain", {})
         counts[verdict] = counts.get(verdict, 0) + 1
         rows.append({
             "url": url, "verdict": verdict,
@@ -1122,6 +1288,8 @@ async def generate_batch_report(
             "ml_score": r.get("ml", {}).get("combined_score", 0.0),
             "vt_malicious": r.get("virustotal", {}).get("malicious", 0),
             "gsb_threat": r.get("safe_browsing", {}).get("is_threat", False),
+            "hop_count": chain.get("hop_count", 0),
+            "is_shortened": chain.get("is_shortened", False),
             "llm_summary": llm_summaries.get(url),
         })
 
@@ -1146,10 +1314,14 @@ async def generate_batch_report(
         tbl.add_column("ML Score",   width=9,  justify="right")
         tbl.add_column("VT Mal",     width=7,  justify="right")
         tbl.add_column("GSB",        width=6,  justify="center")
+        tbl.add_column("Redirects",  width=10, justify="center")
 
         COLOR = {"SAFE": "green", "SUSPICIOUS": "yellow", "MALICIOUS": "red"}
         for i, row in enumerate(rows, 1):
             col = COLOR.get(row["verdict"], "white")
+            redirects = f"{row['hop_count']} hop" + ("s" if row['hop_count'] != 1 else "")
+            if row.get("is_shortened"):
+                redirects += " ⚑"
             tbl.add_row(
                 str(i), row["url"],
                 f"[{col}]{row['verdict']}[/{col}]",
@@ -1157,6 +1329,7 @@ async def generate_batch_report(
                 f"{row['ml_score']:.3f}",
                 str(row["vt_malicious"]),
                 "[red]✗[/red]" if row["gsb_threat"] else "[green]✓[/green]",
+                redirects,
             )
         console.print(tbl)
         console.print()
@@ -1181,15 +1354,18 @@ async def generate_batch_report(
             f"",
             f"## Per-URL Results",
             f"",
-            f"| # | URL | Verdict | Confidence | ML Score | VT Malicious | GSB Threat |",
-            f"|---|-----|---------|------------|----------|-------------|-----------|",
+            f"| # | URL | Verdict | Confidence | ML Score | VT Malicious | GSB Threat | Redirects |",
+            f"|---|-----|---------|------------|----------|-------------|-----------|-----------|",
         ]
         for i, row in enumerate(rows, 1):
             gsb = "Yes" if row["gsb_threat"] else "No"
+            redirects = f"{row['hop_count']} hop" + ("s" if row['hop_count'] != 1 else "")
+            if row.get("is_shortened"):
+                redirects += " ⚠️"
             md_lines.append(
                 f"| {i} | `{row['url']}` | **{row['verdict']}** | "
                 f"{row['confidence']} | {row['ml_score']:.3f} | "
-                f"{row['vt_malicious']} | {gsb} |"
+                f"{row['vt_malicious']} | {gsb} | {redirects} |"
             )
         md_lines += ["", "## Detail per URL", ""]
         for i, (row, result) in enumerate(zip(rows, results), 1):
@@ -1226,12 +1402,16 @@ async def generate_batch_report(
             sep, "PER-URL RESULTS", sep,
         ]
         for i, row in enumerate(rows, 1):
+            redirects = f"{row['hop_count']} hop" + ("s" if row['hop_count'] != 1 else "")
+            if row.get("is_shortened"):
+                redirects += " [shortener used]"
             txt_lines += [
                 f"  {i:3}. {row['url']}",
                 f"       Verdict    : {row['verdict']} ({row['confidence']})",
                 f"       ML Score   : {row['ml_score']:.4f}",
                 f"       VT Mal     : {row['vt_malicious']}",
                 f"       GSB Threat : {'Yes' if row['gsb_threat'] else 'No'}",
+                f"       Redirects  : {redirects}",
                 "",
             ]
         p = REPORTS_DIR / f"{prefix}.txt"

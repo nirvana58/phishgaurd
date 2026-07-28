@@ -1,5 +1,5 @@
 """
-core/webhook.py
+core/discord_webhook.py
 
 Discord notification system.
 
@@ -215,6 +215,15 @@ def _build_embed(scan_id: str, result: dict) -> dict:
         del embed["url"]
 
     return embed
+
+
+def build_scan_embed(scan_id: str, result: dict) -> dict:
+    """
+    Public entry point for building a Discord embed dict from a scan result.
+    Reused by discord_bot.py so on-demand /scan replies match the same
+    visual format as the automated webhook notifications.
+    """
+    return _build_embed(scan_id, result)
 
 
 def _build_payload(scan_id: str, result: dict) -> dict:
