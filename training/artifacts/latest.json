@@ -1,0 +1,21 @@
+{
+  "version": "1787335168",
+  "trained_at": "2026-08-21T17:59:28Z",
+  "source": "csv:safe_diversified.csv",
+  "n_samples": 1000000,
+  "n_features": 17,
+  "training_seconds": 23880.96,
+  "kmeans_clusters": 8,
+  "kmeans_inertia": 6921731.172228178,
+  "som_grid": [
+    10,
+    10
+  ],
+  "som_qe_baseline": 2.9456102332925673,
+  "som_baseline_percentile": 95,
+  "artifacts": {
+    "scaler": "scaler_1787335168.pkl",
+    "kmeans": "kmeans_1787335168.pkl",
+    "som": "som_1787335168.pkl"
+  }
+}

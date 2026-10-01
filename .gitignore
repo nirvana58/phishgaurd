@@ -1,0 +1,47 @@
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+
+# Python environments and caches
+.venv/
+venv/
+ENV/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local databases and runtime files
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.log
+
+# Generated scan reports
+/reports/
+
+# Keep only the currently selected runtime model artifacts
+/training/artifacts/*.pkl
+!/training/artifacts/scaler_1787335168.pkl
+!/training/artifacts/kmeans_1787335168.pkl
+!/training/artifacts/som_1787335168.pkl
+
+# Local training/download datasets
+/majestic_million.csv
+/safe*.csv
+/url*.txt
+/sample.txt
+/Here is a detailed breakdown of K.docx
+/debug_gemini_key.py
+/tmp_urlhaus_check.py
+
+# Local editor configuration
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
