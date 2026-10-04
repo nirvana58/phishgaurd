@@ -37,7 +37,7 @@ WORKDIR /app
 # Revisit the bookworm pin once Playwright ships trixie support and/or
 # you bump the playwright version below.
 
-RUN pip install --no-cache-dir playwright==1.48.0 \
+RUN pip install --no-cache-dir playwright==1.48.0 fastapi==0.138.2 uvicorn==0.49.0 \
     && playwright install --with-deps chromium
 
 RUN useradd --create-home --uid 1000 sandboxuser \
@@ -45,9 +45,10 @@ RUN useradd --create-home --uid 1000 sandboxuser \
     && chown -R sandboxuser:sandboxuser /app /output
 
 COPY detonate.py /app/detonate.py
+COPY api.py /app/api.py
 
 USER sandboxuser
 
 ENV PYTHONUNBUFFERED=1
 
-ENTRYPOINT ["python3", "/app/detonate.py"]
+CMD ["sh", "-c", "if [ -n \"$TARGET_URL\" ]; then exec python3 /app/detonate.py; else exec uvicorn api:app --host 0.0.0.0 --port \"${PORT:-10000}\"; fi"]

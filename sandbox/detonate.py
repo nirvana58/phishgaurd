@@ -12,8 +12,9 @@ files, spawn processes, read host data — is contained by the Docker
 isolation the host sets up around this process (see core/url_sandbox.py
 for the container flags).
 
-Reads the target URL from the TARGET_URL environment variable.
-Writes /output/result.json and /output/screenshot.png.
+Reads the target URL from the TARGET_URL environment variable when run
+directly. The HTTP service can call detonate() with a per-request output
+directory instead of sharing files between requests.
 
 Never raises on a bad/malicious/unreachable page — always writes SOME
 result.json (with "available": False and an error message on failure) so
@@ -21,9 +22,11 @@ the host side has something to read.
 """
 
 import asyncio
+import ipaddress
 import json
 import os
 import re
+import socket
 import time
 from urllib.parse import urlparse
 
@@ -50,7 +53,39 @@ def _registrable_domain(host: str) -> str:
     return ".".join(parts[-2:]) if len(parts) >= 2 else host
 
 
-async def detonate(url: str) -> dict:
+def is_public_http_url(url: str) -> bool:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return False
+    if parsed.username or parsed.password:
+        return False
+
+    hostname = parsed.hostname.rstrip(".").lower()
+    if hostname == "localhost" or hostname.endswith((".localhost", ".local", ".internal")):
+        return False
+
+    try:
+        addresses = socket.getaddrinfo(
+            hostname,
+            parsed.port or (443 if parsed.scheme == "https" else 80),
+            type=socket.SOCK_STREAM,
+        )
+    except (OSError, ValueError):
+        return False
+
+    if not addresses:
+        return False
+    for address in addresses:
+        address_text = address[4][0].split("%", 1)[0]
+        try:
+            if not ipaddress.ip_address(address_text).is_global:
+                return False
+        except ValueError:
+            return False
+    return True
+
+
+async def detonate(url: str, output_dir: str = OUTPUT_DIR) -> dict:
     t0 = time.time()
     result = {
         "available": False,
@@ -92,6 +127,21 @@ async def detonate(url: str) -> dict:
             )
             page = await context.new_page()
 
+            async def _guard_request(route):
+                request_scheme = urlparse(route.request.url).scheme
+                if request_scheme in {"about", "blob", "data"}:
+                    await route.continue_()
+                    return
+                allowed = await asyncio.to_thread(
+                    is_public_http_url, route.request.url
+                )
+                if allowed:
+                    await route.continue_()
+                else:
+                    await route.abort("blockedbyclient")
+
+            await page.route("**/*", _guard_request)
+
             console_errors = []
             page.on(
                 "console",
@@ -120,7 +170,7 @@ async def detonate(url: str) -> dict:
             except Exception as e:
                 result["error"] = f"navigation failed: {e}"
                 await browser.close()
-                _write_result(result)
+                _write_result(result, output_dir)
                 return result
 
             # Let any JS-based redirect / dynamically injected content settle
@@ -181,7 +231,7 @@ async def detonate(url: str) -> dict:
             # Screenshot
             try:
                 await page.screenshot(
-                    path=os.path.join(OUTPUT_DIR, "screenshot.png"),
+                    path=os.path.join(output_dir, "screenshot.png"),
                     full_page=False,  # viewport only -- full_page can be huge/slow on long pages
                     timeout=8000,
                 )
@@ -196,13 +246,13 @@ async def detonate(url: str) -> dict:
     except Exception as e:
         result["error"] = f"sandbox error: {e}"
 
-    _write_result(result)
+    _write_result(result, output_dir)
     return result
 
 
-def _write_result(result: dict) -> None:
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-    with open(os.path.join(OUTPUT_DIR, "result.json"), "w") as f:
+def _write_result(result: dict, output_dir: str = OUTPUT_DIR) -> None:
+    os.makedirs(output_dir, exist_ok=True)
+    with open(os.path.join(output_dir, "result.json"), "w") as f:
         json.dump(result, f, indent=2, default=str)
 
 
