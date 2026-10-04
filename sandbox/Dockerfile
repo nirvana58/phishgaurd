@@ -22,6 +22,7 @@
 FROM python:3.12-slim-bookworm
 
 WORKDIR /app
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 # NOTE ON DEPS: previously hand-listed every system library via apt-get,
 # but that list broke as soon as the python:3.12-slim base image moved to
@@ -42,7 +43,7 @@ RUN pip install --no-cache-dir playwright==1.48.0 fastapi==0.138.2 uvicorn==0.49
 
 RUN useradd --create-home --uid 1000 sandboxuser \
     && mkdir -p /output \
-    && chown -R sandboxuser:sandboxuser /app /output
+    && chown -R sandboxuser:sandboxuser /app /output /ms-playwright
 
 COPY detonate.py /app/detonate.py
 COPY api.py /app/api.py
