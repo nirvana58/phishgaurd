@@ -12,6 +12,8 @@ from pydantic import BaseModel, Field
 
 from detonate import detonate, is_public_http_url
 
+os.chdir("/")  # never depend on a working directory that can disappear
+
 MAX_CONCURRENT_DETONATIONS = 1
 DETONATION_TIMEOUT_SECONDS = 45
 _detonation_slots = asyncio.Semaphore(MAX_CONCURRENT_DETONATIONS)
@@ -68,4 +70,6 @@ async def detonate_endpoint(
                 result["screenshot_base64"] = base64.b64encode(
                     screenshot_path.read_bytes()
                 ).decode("ascii")
+            if not result.get("available"):
+                result.setdefault("reason", result.get("error") or "detonation failed")
             return result

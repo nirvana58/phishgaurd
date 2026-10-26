@@ -86,6 +86,11 @@ def is_public_http_url(url: str) -> bool:
 
 
 async def detonate(url: str, output_dir: str = OUTPUT_DIR) -> dict:
+    # The Playwright Node driver inherits this process's cwd. If /app was
+    # unlinked while the container is running, the driver crashes with
+    # "ENOENT ... uv_cwd". "/" can never be deleted.
+    os.chdir("/")
+
     t0 = time.time()
     result = {
         "available": False,
